@@ -1,12 +1,9 @@
 mod serializer;
 
 use std::{
-    collections::HashMap,
-    error::Error,
     f32::consts::E,
-    fmt::Display,
     fs,
-    io::{self, Cursor, ErrorKind, Read},
+    io::{self},
     path::PathBuf,
     usize, vec,
 };
@@ -169,7 +166,8 @@ impl ANN {
 
         println!("{:?}", buffer);
 
-        let ann = self.deserialize(&buffer)?;
+        let serializer = Serializer{};
+        let ann = serializer.deserialize(&buffer)?;
         /*
         self.layers = ann.layers;
         self.learning_rate = ann.learning_rate;
@@ -178,59 +176,6 @@ impl ANN {
         self.weight_matrices = ann.weight_matrices;
         self.bias_matrices = ann.bias_matrices;
         */
-        Ok(())
-    }
-
-    fn deserialize(&self, buffer: &Vec<u8>) -> Result<(), io::Error> {
-        let total_length = buffer.len();
-        let mut cursor = Cursor::new(buffer);
-        let mut header_magic = vec![0; 10];
-        cursor.read_exact(&mut header_magic)?;
-        if String::from_utf8(header_magic.to_vec()) != Ok("SHIRIN_ANN".to_string()) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "File is not Shirin ANN model or is curropted",
-            ));
-        }
-
-        let mut layers_items_len_buff: [u8; 4] = [0u8; 4];
-        cursor.read_exact(&mut layers_items_len_buff)?;
-        let layers_item_len: usize = u32::from_le_bytes(layers_items_len_buff) as usize;
-
-        let mut layers_bytes_len_buff: [u8; 4] = [0u8; 4];
-        cursor.read_exact(&mut layers_bytes_len_buff)?;
-        let layers_len: usize = u32::from_le_bytes(layers_bytes_len_buff) as usize;
-
-        let cursor_pos = cursor.position() as usize;
-        let bytes_left = total_length - cursor_pos;
-        if bytes_left <= layers_len {
-            return Err(io::Error::new(ErrorKind::InvalidData, "File is corrupted!"));
-        }
-
-        let mut layers_buff = vec![0u8; layers_len];
-        cursor.read_exact(&mut layers_buff)?;
-
-        let mut layers: Vec<Layer> = Vec::new();
-        for i in 0..layers_item_len {
-            let size: usize =
-                u32::from_le_bytes(layers_buff[i*5..i*5 + 4].try_into().unwrap()) as usize;
-            let activation_func_number =
-                u8::from_le_bytes(layers_buff[i*5 + 4..i*5 + 5].try_into().unwrap());
-            let activation_function = ActivationFunction::try_from(activation_func_number)
-                .map_err(|_err| {
-                    io::Error::new(
-                        ErrorKind::InvalidData,
-                        "Activation function selected is not valid",
-                    )
-                })?;
-            let layer = Layer {
-                size,
-                activation_function,
-            };
-            
-            layers.push(layer);
-        }
-        println!("{:?}", layers);
         Ok(())
     }
 }
