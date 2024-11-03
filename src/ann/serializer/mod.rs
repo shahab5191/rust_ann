@@ -44,6 +44,8 @@ impl Serializer {
         buffer.extend((act_vec.len() as u32).to_le_bytes());
         buffer.extend(act_vec);
 
+        println!("buffer: {:?}", buffer);
+
         buffer
     }
 
@@ -93,7 +95,7 @@ impl Serializer {
     ) -> Result<(), io::Error> {
         let total_length = cursor.get_ref().len();
         let current_position = cursor.position() as usize;
-        if total_length - current_position <= desired_len {
+        if total_length - current_position < desired_len {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "File is not complete!",
@@ -161,14 +163,17 @@ impl Serializer {
 
     fn deserialize_vec(cursor: &mut Cursor<&Vec<u8>>) -> Result<Vec<Array2<f32>>, io::Error> {
         let vec_item_len: usize = Self::read_bytes_as_usize(cursor)?;
-        println!("vec item len: {}", vec_item_len);
+        println!("vec_item_len {}", vec_item_len);
         let vec_len: usize = Self::read_bytes_as_usize(cursor)?;
-        println!("vec buffer len: {}", vec_len);
+        println!("vec_len {}", vec_len);
 
         Self::check_remaining_bytes(cursor, vec_len)?;
 
         let mut vec: Vec<Array2<f32>> = Vec::new();
         for _ in 0..vec_item_len {
+            let pos = cursor.position();
+            let mut buff: Vec<u8> = Vec::new();
+            cursor.set_position(pos);
             let buffer_len: usize = Self::read_bytes_as_usize(cursor)?;
             const F32_SIZE: usize = std::mem::size_of::<f32>();
             if (vec_len % F32_SIZE) != 0 {
@@ -206,17 +211,22 @@ impl Serializer {
         Self::deserialize_header(&mut cursor)?;
 
         let layers = self.deserialize_layers(&mut cursor);
+        println!("layers {:?}", layers);
 
         let learning_rate = Self::deserialize_learning_rate(&mut cursor)?;
+        println!("learning_rate {}", learning_rate);
 
         let example_number = Self::deserialize_example_number(&mut cursor)?;
+        println!("example_number {}", example_number);
 
         let activation_matrices = Self::deserialize_vec(&mut cursor)?;
-
-        println!("layers {:?}", layers);
-        println!("learning_rate {}", learning_rate);
-        println!("example_number {}", example_number);
         println!("activation_matrices {:?}", activation_matrices);
+
+        let weight_matrices = Self::deserialize_vec(&mut cursor)?;
+        println!("weight_matrices {:?}", weight_matrices);
+
+        let bias_matrices = Self::deserialize_vec(&mut cursor)?;
+        println!("bias_matrices {:?}", bias_matrices);
         Ok(())
     }
 }

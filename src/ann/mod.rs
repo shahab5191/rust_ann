@@ -164,8 +164,6 @@ impl ANN {
     pub fn from_file(&mut self, file_path: PathBuf) -> Result<(), io::Error> {
         let buffer = fs::read(file_path)?;
 
-        println!("{:?}", buffer);
-
         let serializer = Serializer{};
         let ann = serializer.deserialize(&buffer)?;
         /*
