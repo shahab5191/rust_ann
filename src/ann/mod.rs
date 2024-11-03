@@ -161,19 +161,11 @@ impl ANN {
         Ok(())
     }
 
-    pub fn from_file(&mut self, file_path: PathBuf) -> Result<(), io::Error> {
+    pub fn from_file(file_path: PathBuf) -> Result<ANN, io::Error> {
         let buffer = fs::read(file_path)?;
 
         let serializer = Serializer{};
         let ann = serializer.deserialize(&buffer)?;
-        /*
-        self.layers = ann.layers;
-        self.learning_rate = ann.learning_rate;
-        self.example_number = ann.example_number;
-        self.activation_matrices = ann.activation_matrices;
-        self.weight_matrices = ann.weight_matrices;
-        self.bias_matrices = ann.bias_matrices;
-        */
-        Ok(())
+        Ok(ann)
     }
 }

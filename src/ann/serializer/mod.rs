@@ -195,38 +195,41 @@ impl Serializer {
                 array_vec.push(value);
             }
 
-            let array: Array2<f32> = Array2::from_shape_vec((cols, rows), array_vec).map_err(
-                |_e| {
+            let array: Array2<f32> =
+                Array2::from_shape_vec((cols, rows), array_vec).map_err(|_e| {
                     return io::Error::new(ErrorKind::InvalidInput, "Could not create 2D Array!");
-                }
-            )?;
+                })?;
             vec.push(array);
         }
         Ok(vec)
     }
 
-    pub fn deserialize(&self, buffer: &Vec<u8>) -> Result<(), io::Error> {
+    pub fn deserialize(&self, buffer: &Vec<u8>) -> Result<ANN, io::Error> {
         let mut cursor = Cursor::new(buffer);
 
         Self::deserialize_header(&mut cursor)?;
 
-        let layers = self.deserialize_layers(&mut cursor);
-        println!("layers {:?}", layers);
+        let layers = self.deserialize_layers(&mut cursor)?;
 
         let learning_rate = Self::deserialize_learning_rate(&mut cursor)?;
-        println!("learning_rate {}", learning_rate);
 
         let example_number = Self::deserialize_example_number(&mut cursor)?;
-        println!("example_number {}", example_number);
 
         let activation_matrices = Self::deserialize_vec(&mut cursor)?;
-        println!("activation_matrices {:?}", activation_matrices);
 
         let weight_matrices = Self::deserialize_vec(&mut cursor)?;
-        println!("weight_matrices {:?}", weight_matrices);
 
         let bias_matrices = Self::deserialize_vec(&mut cursor)?;
-        println!("bias_matrices {:?}", bias_matrices);
-        Ok(())
+
+        let ann = ANN {
+            learning_rate,
+            example_number,
+            activation_matrices,
+            weight_matrices,
+            bias_matrices,
+            layers,
+        };
+
+        Ok(ann)
     }
 }
