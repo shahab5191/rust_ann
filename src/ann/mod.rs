@@ -1,5 +1,5 @@
 use core::f32;
-use std::{collections::HashMap, f32::consts::E};
+use std::{collections::HashMap, f32::consts::E, fmt::Display};
 
 use ndarray::{Array, Array2};
 use rand::{distributions::Uniform, prelude::Distribution};
@@ -45,13 +45,11 @@ impl ANN {
         }
     }
 
-    pub fn initialize_parameters(&mut self) -> HashMap<String, Array2<f32>> {
+    pub fn initialize_parameters(&mut self) {
         let between = Uniform::from(-1.0..1.0);
         let mut rng = rand::thread_rng();
 
         let number_of_layers = self.layers.len();
-
-        let mut parameters: HashMap<String, Array2<f32>> = HashMap::new();
 
         for l in 0..number_of_layers - 1 {
             let weight_array: Vec<f32> = (0..self.layers[l + 1] * self.layers[l])
@@ -65,15 +63,7 @@ impl ANN {
 
             self.bias_matrices[l] =
                 Array2::from_shape_vec((self.layers[l + 1], 1), bias_array).unwrap();
-
-            let weight_string = ["W", &l.to_string()].join("").to_string();
-            let biases_string = ["b", &l.to_string()].join("").to_string();
-
-            parameters.insert(weight_string, self.weight_matrices[l].clone());
-            parameters.insert(biases_string, self.bias_matrices[l].clone());
         }
-
-        parameters
     }
 
     fn sigmoid_activation(&self, arr: Array2<f32>) -> Array2<f32> {
@@ -95,16 +85,41 @@ impl ANN {
         arr.map(relu)
     }
 
-    pub fn linear_forward_activation(&mut self, layer: usize, activation: ActivationFunction) -> () {
-        let weight_mat = &self.weight_matrices[layer];
-        let act_mat = &self.activation_matrices[layer];
-        let bias_mat = &self.bias_matrices[layer];
+    fn linear_forward_activation(&mut self, layer_number: usize, activation: ActivationFunction) -> () {
+        let weight_mat = &self.weight_matrices[layer_number];
+        let act_mat = &self.activation_matrices[layer_number];
+        let bias_mat = &self.bias_matrices[layer_number];
         let logit_mat = weight_mat.dot(act_mat) + bias_mat;
         let next_activation_mat = match activation {
-            ActivationFunction::Relu => self.sigmoid_activation(logit_mat),
-            ActivationFunction::Sigmoid => self.relu_activation(logit_mat)
+            ActivationFunction::Relu => self.relu_activation(logit_mat),
+            ActivationFunction::Sigmoid => self.sigmoid_activation(logit_mat),
         };
 
-        self.activation_matrices[layer + 1] = next_activation_mat;
+        self.activation_matrices[layer_number + 1] = next_activation_mat;
+    }
+
+    pub fn forward_propagation(&mut self) {
+        for l in 0..self.layers.len() - 1{
+            self.linear_forward_activation(l, ActivationFunction::Sigmoid);
+        }
+    }
+
+    pub fn print_layers(&self) -> (){
+        for l in 0..self.layers.len() - 1{
+            println!("Layer({}):", l);
+            for n in &self.activation_matrices[l]{
+                print!("A: {}\t", *n);
+            }
+            println!();
+            for w in &self.weight_matrices[l]{
+                print!("W: {}\t", w)
+            }
+            println!()
+        }
+        for n in &self.activation_matrices[self.layers.len() - 1]{
+            print!("Output: {}\t", *n);
+        }
+        println!();
     }
 }
+

@@ -1,9 +1,12 @@
 mod ann;
-use ann::{ActivationFunction, ANN};
+use std::time::Instant;
+
+use ann::ANN;
 fn main() {
-    let mut ann = ANN::new(vec![10,3,2,10], 0.01, 1);
-    let hash = ann.initialize_parameters();
-    println!("before fa:\n{:?}",ann.activation_matrices[1]);
-    ann.linear_forward_activation(0, ActivationFunction::Sigmoid);
-    println!("after fa:\n{:?}",ann.activation_matrices[1]);
+    let mut ann = ANN::new(vec![160000, 1000, 800, 900, 640, 500, 800, 1000], 0.01, 1);
+    ann.initialize_parameters();
+    let start = Instant::now();
+    ann.forward_propagation();
+    let duration = start.elapsed();
+    println!("Elapsed time: {:?}", duration);
 }
