@@ -1,12 +1,6 @@
 mod serializer;
 
-use std::{
-    f32::consts::E,
-    fs,
-    io::{self},
-    path::PathBuf,
-    usize, vec,
-};
+use std::{f32::consts::E, fs, io, path::PathBuf, usize, vec};
 
 use ndarray::{Array, Array2};
 use rand::{distributions::Uniform, prelude::Distribution};
@@ -16,6 +10,22 @@ use serializer::Serializer;
 pub enum ActivationFunction {
     Sigmoid = 1,
     Relu = 2,
+}
+
+#[derive(Debug, Clone)]
+pub enum CostFunction {
+    MeanSquaredError = 1,
+    BinaryCrossEntropy = 2,
+}
+
+trait Log {
+    fn log(&self) -> Array2<f32>;
+}
+
+impl Log for Array2<f32> {
+    fn log(&self) -> Array2<f32> {
+        self.map(|x| x.log(std::f32::consts::E))
+    }
 }
 
 impl TryFrom<u8> for ActivationFunction {
@@ -136,6 +146,31 @@ impl ANN {
         }
     }
 
+    pub fn cost(&self, cost_function: CostFunction, expected_res: &Array2<f32>) -> Result<f32, io::Error> {
+        let output = match self.activation_matrices.last() {
+            Some(val) => val,
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "Model is not defined!",
+                ))
+            }
+        };
+
+        if expected_res.dim() != output.dim() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Provided result do not have same size as model output",
+            ));
+        }
+        let cost = -(1.0 / self.example_number as f32)
+            * (expected_res.dot(&output.clone().reversed_axes().log())
+                + (1.0 - expected_res) * (1.0 - output).log()
+            );
+        
+        Ok(cost.sum())
+    }
+
     pub fn print_layers(&self) -> () {
         for l in 0..self.layers.len() - 1 {
             println!("Layer({}):", l);
@@ -155,16 +190,16 @@ impl ANN {
     }
 
     pub fn save_model(&self, file_path: PathBuf) -> Result<(), io::Error> {
-        let serializer = Serializer{};
+        let serializer = Serializer {};
         let buffer = serializer.serialize(self)?;
         fs::write(file_path, buffer).expect("Unable to write to file!");
         Ok(())
     }
 
-    pub fn from_file(file_path: PathBuf) -> Result<ANN, io::Error> {
+    pub fn from_file(file_path: PathBuf) -> Result<Self, io::Error> {
         let buffer = fs::read(file_path)?;
 
-        let serializer = Serializer{};
+        let serializer = Serializer {};
         let ann = serializer.deserialize(&buffer)?;
         Ok(ann)
     }
