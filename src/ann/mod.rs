@@ -3,7 +3,7 @@ mod serializer;
 use std::{f32::consts::E, fs, io, path::PathBuf, usize, vec};
 
 use log::info;
-use ndarray::{Array, Array2};
+use ndarray::{Array, Array2, Axis};
 use rand::{distributions::Uniform, prelude::Distribution};
 use serializer::Serializer;
 
@@ -153,6 +153,19 @@ impl ANN {
             }
         }
         arr * self.logit_matrices[layer_number].map(|x| relu_prime(x))
+    }
+
+    // TODO: Finishe this
+    fn linear_backward(&self, dz: &Array2<f32>, layer_number: usize) -> Result<(), io::Error>{
+        let example_number: f32 = self.example_number as f32;
+        let previous_layer_activation = self.activation_matrices[layer_number - 1].clone();
+        let weights = self.weight_matrices[layer_number - 1].clone();
+
+        let delta_weight = (1.0 / example_number) * (dz.dot(&previous_layer_activation.reversed_axes()));
+        let delta_bias_vec = ((1.0 / example_number) * dz.sum_axis(Axis(1))).to_vec();
+        let delta_bias = Array2::from_shape_vec((delta_bias_vec.len(), 1), delta_bias_vec).unwrap();
+        let delta_activation_prev = weights.reversed_axes().dot(dz);
+        Ok(())
     }
 
     fn linear_forward_activation(
