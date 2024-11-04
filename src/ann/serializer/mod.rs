@@ -65,6 +65,9 @@ impl Serializer {
         // Serializing example_number
         buffer.extend((ann.example_number as u32).to_le_bytes());
 
+        // Serializig logit_matrices
+        buffer.extend(self.serialize_vec(&ann.logit_matrices));
+
         // Serializing activation_matrices
         buffer.extend(self.serialize_vec(&ann.activation_matrices));
 
@@ -215,6 +218,8 @@ impl Serializer {
 
         let example_number = Self::deserialize_example_number(&mut cursor)?;
 
+        let logit_matrices = Self::deserialize_vec(&mut cursor)?;
+
         let activation_matrices = Self::deserialize_vec(&mut cursor)?;
 
         let weight_matrices = Self::deserialize_vec(&mut cursor)?;
@@ -224,6 +229,7 @@ impl Serializer {
         let ann = ANN {
             learning_rate,
             example_number,
+            logit_matrices,
             activation_matrices,
             weight_matrices,
             bias_matrices,
