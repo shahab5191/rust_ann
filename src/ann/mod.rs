@@ -177,6 +177,7 @@ impl ANN {
             "Linear forward activation function called for layer {}",
             layer_number
         );
+        info!("Layer number: {layer_number}");
         let weight_mat = self.weight_matrices[layer_number].clone();
         let act_mat = self.activation_matrices[layer_number].clone();
         let bias_mat = self.bias_matrices[layer_number].clone();
@@ -186,7 +187,7 @@ impl ANN {
             ActivationFunction::Relu => Self::relu_activation(&logit_mat),
             ActivationFunction::Sigmoid => Self::sigmoid_activation(&logit_mat),
         };
-        self.logit_matrices[layer_number + 1] = logit_mat;
+        self.logit_matrices[layer_number] = logit_mat;
         self.activation_matrices[layer_number + 1] = next_activation_mat;
     }
 
@@ -269,7 +270,15 @@ impl ANN {
             for w in &self.weight_matrices[l] {
                 print!("W: {}\t", w)
             }
-            println!()
+            println!();
+            for b in &self.bias_matrices[l]{
+                print!("B: {}\t", b);
+            }
+            println!();
+            for z in &self.logit_matrices[l]{
+                print!("Z: {}\t", z);
+            }
+            println!();
         }
         for n in self.activation_matrices.last().unwrap() {
             print!("Output: {}\t", *n);
