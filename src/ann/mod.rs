@@ -62,6 +62,7 @@ pub struct ANN {
     pub layers: Vec<Layer>,
     pub learning_rate: f32,
     pub example_number: usize,
+    pub cost_function: CostFunction,
     pub logit_matrices: Vec<Array2<f32>>,
     pub activation_matrices: Vec<Array2<f32>>,
     pub weight_matrices: Vec<Array2<f32>>,
@@ -127,12 +128,12 @@ impl ANN {
         arr.map(Self::sigmoid)
     }
 
-    fn sigmoid_backward(&self, arr: &Array2<f32>, layer_number: usize) -> Array2<f32> {
+    fn sigmoid_backward(&self, layer_number: usize) -> Array2<f32> {
         fn sigmoid_prime(val: &f32) -> f32 {
             ANN::sigmoid(val) * (1.0 - ANN::sigmoid(val))
         }
 
-        arr * self.logit_matrices[layer_number].map(|x| sigmoid_prime(x))
+        self.logit_matrices[layer_number].map(|x| sigmoid_prime(x))
     }
 
     fn relu_activation(arr: &Array2<f32>) -> Array2<f32> {
@@ -145,26 +146,73 @@ impl ANN {
         arr.map(relu)
     }
 
-    fn relu_backward(&self, arr: &Array2<f32>, layer_number: usize) -> Array2<f32> {
+    fn relu_backward(&self, layer_number: usize) -> Array2<f32> {
         fn relu_prime(val: &f32) -> f32 {
             match *val > 0.0 {
                 true => 1.0,
                 false => 0.0,
             }
         }
-        arr * self.logit_matrices[layer_number].map(|x| relu_prime(x))
+        self.logit_matrices[layer_number].map(|x| relu_prime(x))
     }
 
-    // TODO: Finishe this
-    fn linear_backward(&self, dz: &Array2<f32>, layer_number: usize) -> Result<(), io::Error>{
-        let example_number: f32 = self.example_number as f32;
-        let previous_layer_activation = self.activation_matrices[layer_number - 1].clone();
-        let weights = self.weight_matrices[layer_number - 1].clone();
+    // TODO: Finish this
+    fn linear_backward(
+        &self,
+        next_delta: &Array2<f32>,
+        layer_number: usize,
+    ) -> Result<(Array2<f32>, Array2<f32>), io::Error> {
+        let delta_activation = match self.layers[layer_number].activation_function {
+            ActivationFunction::Relu => self.relu_backward(layer_number),
+            ActivationFunction::Sigmoid => self.sigmoid_backward(layer_number),
+        };
+        let delta_batch =
+            self.weight_matrices[layer_number - 1].t().dot(next_delta) * delta_activation;
 
-        let delta_weight = (1.0 / example_number) * (dz.dot(&previous_layer_activation.reversed_axes()));
-        let delta_bias_vec = ((1.0 / example_number) * dz.sum_axis(Axis(1))).to_vec();
-        let delta_bias = Array2::from_shape_vec((delta_bias_vec.len(), 1), delta_bias_vec).unwrap();
-        let delta_activation_prev = weights.reversed_axes().dot(dz);
+        let delta = delta_batch.mean_axis(Axis(1)).unwrap().insert_axis(Axis(1));
+
+        let weight_grad = delta
+            .clone()
+            .dot(&self.activation_matrices[layer_number - 1].t())
+            / self.example_number as f32;
+
+        Ok((delta, weight_grad))
+    }
+
+    pub fn backpropagation(&self, expected: &Array2<f32>) -> Result<(), io::Error> {
+        let cost = self.cost(expected)?;
+        let layers_len = self.layers.len();
+
+        let mut grads: Vec<Array2<f32>> = Vec::new();
+        let mut deltas: Vec<Array2<f32>> = Vec::new();
+
+        for i in 0..self.layers.len() {
+            grads.push(Array2::zeros((self.layers[i].size, 1)));
+            deltas.push(Array2::zeros((self.layers[i].size, 1)));
+        }
+
+        let output = self.activation_matrices.last().unwrap();
+        let output_cost = match self.cost_function {
+            CostFunction::BinaryCrossEntropy => Self::binary_cross_entropy(output, expected),
+            CostFunction::MeanSquaredError => Self::mean_squared_error(output, expected),
+        }?;
+
+        let cost_prime = match self.cost_function {
+            CostFunction::MeanSquaredError => self.mean_squared_error_prime(expected),
+            CostFunction::BinaryCrossEntropy => self.binary_cross_entropy_prime(expected),
+        };
+
+        let delta_cost = (cost - output_cost)
+            .dot(&cost_prime.t())
+            .mean_axis(Axis(1))
+            .unwrap()
+            .insert_axis(Axis(1));
+        let (delta_out, weight_grad_out) = self.linear_backward(&delta_cost, layers_len - 1)?;
+        grads[layers_len - 1] = weight_grad_out;
+        deltas[layers_len - 1] = delta_out;
+
+        for i in (1..layers_len - 1).rev() {}
+
         Ok(())
     }
 
@@ -217,7 +265,7 @@ impl ANN {
     fn binary_cross_entropy(
         output: &Array2<f32>,
         expected: &Array2<f32>,
-    ) -> Result<f32, io::Error> {
+    ) -> Result<Array2<f32>, io::Error> {
         info!("Binary cross entropy called");
         Self::is_equal_size(output, expected)?;
         let example_number = output.dim().1;
@@ -225,23 +273,31 @@ impl ANN {
             * (expected.dot(&output.clone().reversed_axes().log())
                 + (1.0 - expected) * (1.0 - output).log());
 
-        Ok(cost.sum())
+        Ok(cost)
     }
 
-    fn mean_squared_error(output: &Array2<f32>, expected: &Array2<f32>) -> Result<f32, io::Error> {
+    fn binary_cross_entropy_prime(&self, expected: &Array2<f32>) -> Array2<f32> {
+        let output = self.activation_matrices.last().unwrap();
+        (output - expected) / (output * (1.0 - output))
+    }
+
+    fn mean_squared_error(
+        output: &Array2<f32>,
+        expected: &Array2<f32>,
+    ) -> Result<Array2<f32>, io::Error> {
         info!("Mean squared error called");
         Self::is_equal_size::<f32>(output, expected)?;
         let example_number: f32 = output.dim().1 as f32;
-        let cost = ((1.0 / example_number) * (expected - output).pow(2)).sum();
+        let cost = ((1.0 / example_number) * (expected - output).pow(2));
         info!("Calculated cost is: {}", cost);
         Ok(cost)
     }
 
-    pub fn cost(
-        &self,
-        cost_function: CostFunction,
-        expected: &Array2<f32>,
-    ) -> Result<f32, io::Error> {
+    fn mean_squared_error_prime(&self, expected: &Array2<f32>) -> Array2<f32> {
+        self.activation_matrices.last().unwrap() - expected
+    }
+
+    fn cost(&self, expected: &Array2<f32>) -> Result<f32, io::Error> {
         let output = match self.activation_matrices.last() {
             Some(val) => val,
             None => {
@@ -252,12 +308,12 @@ impl ANN {
             }
         };
 
-        let cost = match cost_function {
+        let cost = match self.cost_function {
             CostFunction::MeanSquaredError => Self::mean_squared_error(output, expected),
             CostFunction::BinaryCrossEntropy => Self::binary_cross_entropy(&output, expected),
         };
 
-        cost
+        Ok(cost?.sum())
     }
 
     pub fn print_layers(&self) -> () {
@@ -271,11 +327,11 @@ impl ANN {
                 print!("W: {}\t", w)
             }
             println!();
-            for b in &self.bias_matrices[l]{
+            for b in &self.bias_matrices[l] {
                 print!("B: {}\t", b);
             }
             println!();
-            for z in &self.logit_matrices[l]{
+            for z in &self.logit_matrices[l] {
                 print!("Z: {}\t", z);
             }
             println!();

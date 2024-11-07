@@ -28,7 +28,4 @@ fn main() {
     println!("Calling forward propagation");
     ann.forward_propagation();
     ann.print_layers();
-    let _cost = ann
-        .cost(ann::CostFunction::MeanSquaredError, &expectation)
-        .unwrap();
 }
