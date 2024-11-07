@@ -7,7 +7,7 @@ use ndarray::{Array2, Axis};
 
 use crate::ann::{ActivationFunction, ANN};
 
-use super::Layer;
+use super::{CostFunction, Layer};
 pub struct Serializer {}
 
 impl Serializer {
@@ -64,6 +64,9 @@ impl Serializer {
 
         // Serializing example_number
         buffer.extend((ann.example_number as u32).to_le_bytes());
+
+        // Serializing cost_function
+        buffer.extend((ann.cost_function.clone() as u8).to_le_bytes());
 
         // Serializig logit_matrices
         buffer.extend(self.serialize_vec(&ann.logit_matrices));
@@ -175,7 +178,6 @@ impl Serializer {
         let mut vec: Vec<Array2<f32>> = Vec::new();
         for _ in 0..vec_item_len {
             let pos = cursor.position();
-            let mut buff: Vec<u8> = Vec::new();
             cursor.set_position(pos);
             let buffer_len: usize = Self::read_bytes_as_usize(cursor)?;
             const F32_SIZE: usize = std::mem::size_of::<f32>();
@@ -207,6 +209,21 @@ impl Serializer {
         Ok(vec)
     }
 
+    fn deserialize_cost_function(cursor: &mut Cursor<&Vec<u8>>) -> Result<CostFunction, io::Error>{
+        let mut byte: [u8; 1] = [0u8; 1];
+        cursor.read_exact(&mut byte)?;
+        let cost_byte = u8::from_le_bytes(byte);
+        let cost_function = CostFunction::try_from(cost_byte)
+            .map_err(|_err| {
+                io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Activation function selected is not valid",
+                )
+            })?;
+
+        Ok(cost_function)
+    }
+
     pub fn deserialize(&self, buffer: &Vec<u8>) -> Result<ANN, io::Error> {
         let mut cursor = Cursor::new(buffer);
 
@@ -217,6 +234,8 @@ impl Serializer {
         let learning_rate = Self::deserialize_learning_rate(&mut cursor)?;
 
         let example_number = Self::deserialize_example_number(&mut cursor)?;
+
+        let cost_function = Self::deserialize_cost_function(&mut cursor)?;
 
         let logit_matrices = Self::deserialize_vec(&mut cursor)?;
 
@@ -234,6 +253,7 @@ impl Serializer {
             weight_matrices,
             bias_matrices,
             layers,
+            cost_function
         };
 
         Ok(ann)

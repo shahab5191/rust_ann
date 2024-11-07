@@ -51,6 +51,18 @@ impl TryFrom<u8> for ActivationFunction {
     }
 }
 
+impl TryFrom<u8> for CostFunction {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(CostFunction::MeanSquaredError),
+            2 => Ok(CostFunction::BinaryCrossEntropy),
+            _ => Err("Invalid value for ActivationFunction"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Layer {
     pub size: usize,
@@ -70,7 +82,12 @@ pub struct ANN {
 }
 
 impl ANN {
-    pub fn new(layers: Vec<Layer>, learning_rate: f32, example_number: usize) -> Self {
+    pub fn new(
+        layers: Vec<Layer>,
+        learning_rate: f32,
+        example_number: usize,
+        cost_function: CostFunction,
+    ) -> Self {
         let mut activation_matrices: Vec<Array2<f32>> = vec![];
         let mut weight_matrices: Vec<Array2<f32>> = vec![];
         let mut bias_matrices: Vec<Array2<f32>> = vec![];
@@ -96,6 +113,7 @@ impl ANN {
             activation_matrices,
             weight_matrices,
             bias_matrices,
+            cost_function,
         }
     }
 
@@ -179,14 +197,17 @@ impl ANN {
         Ok((delta, weight_grad))
     }
 
-    pub fn backpropagation(&self, expected: &Array2<f32>) -> Result<(), io::Error> {
+    pub fn backpropagation(
+        &self,
+        expected: &Array2<f32>,
+    ) -> Result<(Vec<Array2<f32>>, Vec<Array2<f32>>), io::Error> {
         let cost = self.cost(expected)?;
         let layers_len = self.layers.len();
 
         let mut grads: Vec<Array2<f32>> = Vec::new();
         let mut deltas: Vec<Array2<f32>> = Vec::new();
 
-        for i in 0..self.layers.len() {
+        for i in 1..self.layers.len() {
             grads.push(Array2::zeros((self.layers[i].size, 1)));
             deltas.push(Array2::zeros((self.layers[i].size, 1)));
         }
@@ -208,10 +229,23 @@ impl ANN {
             .unwrap()
             .insert_axis(Axis(1));
         let (delta_out, weight_grad_out) = self.linear_backward(&delta_cost, layers_len - 1)?;
-        grads[layers_len - 1] = weight_grad_out;
-        deltas[layers_len - 1] = delta_out;
+        grads[layers_len - 2] = weight_grad_out;
+        deltas[layers_len - 2] = delta_out;
 
-        for i in (1..layers_len - 1).rev() {}
+        for i in (1..layers_len - 1).rev() {
+            (deltas[i - 1], grads[i - 1]) = self.linear_backward(&deltas[i + 1], i)?;
+        }
+
+        Ok((deltas, grads))
+    }
+
+    pub fn train(&mut self, expected: &Array2<f32>) -> Result<(), io::Error> {
+        let (deltas, grads) = self.backpropagation(expected)?;
+
+        for i in 0..self.weight_matrices.len() {
+            self.weight_matrices[i] = &self.weight_matrices[i] - self.learning_rate * &grads[i];
+            self.bias_matrices[i] = deltas[i].clone();
+        }
 
         Ok(())
     }
@@ -288,7 +322,7 @@ impl ANN {
         info!("Mean squared error called");
         Self::is_equal_size::<f32>(output, expected)?;
         let example_number: f32 = output.dim().1 as f32;
-        let cost = ((1.0 / example_number) * (expected - output).pow(2));
+        let cost = (1.0 / example_number) * (expected - output).pow(2);
         info!("Calculated cost is: {}", cost);
         Ok(cost)
     }

@@ -20,7 +20,7 @@ fn main() {
         size: 2,
         activation_function: ann::ActivationFunction::Sigmoid,
     });
-    let mut ann = ANN::new(layers, 0.01, 1);
+    let mut ann = ANN::new(layers, 0.01, 1, ann::CostFunction::MeanSquaredError);
 
     ann.initialize_parameters();
     let expectation_vec = vec![1.0, 0.5];
