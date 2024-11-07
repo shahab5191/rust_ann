@@ -180,19 +180,20 @@ impl ANN {
         next_delta: &Array2<f32>,
         layer_number: usize,
     ) -> Result<(Array2<f32>, Array2<f32>), io::Error> {
+        info!("Generating delta and gradient for layer {}", layer_number);
         let delta_activation = match self.layers[layer_number].activation_function {
-            ActivationFunction::Relu => self.relu_backward(layer_number),
-            ActivationFunction::Sigmoid => self.sigmoid_backward(layer_number),
+            ActivationFunction::Relu => self.relu_backward(layer_number - 1),
+            ActivationFunction::Sigmoid => self.sigmoid_backward(layer_number - 1),
         };
+        info!("Delta activation: {:?}", delta_activation);
+
         let delta_batch =
             self.weight_matrices[layer_number - 1].t().dot(next_delta) * delta_activation;
 
         let delta = delta_batch.mean_axis(Axis(1)).unwrap().insert_axis(Axis(1));
 
-        let weight_grad = delta
-            .clone()
-            .dot(&self.activation_matrices[layer_number - 1].t())
-            / self.example_number as f32;
+        let weight_grad =
+            delta.dot(&self.activation_matrices[layer_number - 1].t()) / self.example_number as f32;
 
         Ok((delta, weight_grad))
     }
@@ -200,8 +201,10 @@ impl ANN {
     pub fn backpropagation(
         &self,
         expected: &Array2<f32>,
-    ) -> Result<(Vec<Array2<f32>>, Vec<Array2<f32>>), io::Error> {
+    ) -> Result<(f32, Vec<Array2<f32>>, Vec<Array2<f32>>), io::Error> {
+        info!("Back propagation started");
         let cost = self.cost(expected)?;
+        info!("Cost result: {cost}");
         let layers_len = self.layers.len();
 
         let mut grads: Vec<Array2<f32>> = Vec::new();
@@ -211,6 +214,7 @@ impl ANN {
             grads.push(Array2::zeros((self.layers[i].size, 1)));
             deltas.push(Array2::zeros((self.layers[i].size, 1)));
         }
+        info!("Grads and deltas initialized");
 
         let output = self.activation_matrices.last().unwrap();
         let output_cost = match self.cost_function {
@@ -218,36 +222,48 @@ impl ANN {
             CostFunction::MeanSquaredError => Self::mean_squared_error(output, expected),
         }?;
 
-        let cost_prime = match self.cost_function {
+        info!("Cost of each output node generated:\n{:?}", output_cost);
+
+        let delta_cost = match self.cost_function {
             CostFunction::MeanSquaredError => self.mean_squared_error_prime(expected),
             CostFunction::BinaryCrossEntropy => self.binary_cross_entropy_prime(expected),
-        };
+        }
+        .mean_axis(Axis(1))
+        .unwrap()
+        .insert_axis(Axis(1));
 
-        let delta_cost = (cost - output_cost)
-            .dot(&cost_prime.t())
-            .mean_axis(Axis(1))
-            .unwrap()
-            .insert_axis(Axis(1));
+        info!("cost delta calculated: {:?}", delta_cost);
+
+        info!(
+            "Calculating delta and weight_grad for output layer(layer number {})",
+            layers_len - 1
+        );
         let (delta_out, weight_grad_out) = self.linear_backward(&delta_cost, layers_len - 1)?;
+        info!("output delta: {:?}", delta_out);
+        info!("weight grad: {:?}", weight_grad_out);
         grads[layers_len - 2] = weight_grad_out;
         deltas[layers_len - 2] = delta_out;
+        info!("output grad and output delta added to vector!");
 
         for i in (1..layers_len - 1).rev() {
-            (deltas[i - 1], grads[i - 1]) = self.linear_backward(&deltas[i + 1], i)?;
+            info!("Generating delta and grad for layer {}", i);
+            (deltas[i - 1], grads[i - 1]) = self.linear_backward(&deltas[i], i)?;
         }
 
-        Ok((deltas, grads))
+        Ok((cost, deltas, grads))
     }
 
-    pub fn train(&mut self, expected: &Array2<f32>) -> Result<(), io::Error> {
-        let (deltas, grads) = self.backpropagation(expected)?;
+    pub fn train(&mut self, expected: &Array2<f32>) -> Result<f32, io::Error> {
+        info!("Training model...");
+        let (cost, deltas, grads) = self.backpropagation(expected)?;
 
+        info!("Changing weights and biases based on generated grades and deltas");
         for i in 0..self.weight_matrices.len() {
             self.weight_matrices[i] = &self.weight_matrices[i] - self.learning_rate * &grads[i];
-            self.bias_matrices[i] = deltas[i].clone();
+            self.bias_matrices[i] = &self.bias_matrices[i] - self.learning_rate * &deltas[i];
         }
 
-        Ok(())
+        Ok(cost)
     }
 
     fn linear_forward_activation(
@@ -328,7 +344,7 @@ impl ANN {
     }
 
     fn mean_squared_error_prime(&self, expected: &Array2<f32>) -> Array2<f32> {
-        self.activation_matrices.last().unwrap() - expected
+        2.0 * (self.activation_matrices.last().unwrap() - expected)
     }
 
     fn cost(&self, expected: &Array2<f32>) -> Result<f32, io::Error> {
