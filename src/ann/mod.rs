@@ -97,8 +97,8 @@ impl ANN {
         for i in 1..layers.len() {
             let act_mat = Array2::<f32>::zeros((layers[i].size, example_number));
             let bias_mat = Array2::<f32>::zeros((layers[i].size, 1));
-            let weight_mat = Array2::<f32>::zeros((layers[i - 1].size, layers[i].size));
-            let logit_mat = Array2::<f32>::zeros((layers[i - 1].size, example_number));
+            let weight_mat = Array2::<f32>::zeros((layers[i].size, layers[i - 1].size));
+            let logit_mat = Array2::<f32>::zeros((layers[i].size, example_number));
             activation_matrices.push(act_mat);
             bias_matrices.push(bias_mat);
             weight_matrices.push(weight_mat);
@@ -129,13 +129,14 @@ impl ANN {
                 .collect();
 
             let bias_array: Vec<f32> = (0..self.layers[l + 1].size).map(|_| 0.0).collect();
-
+            
             self.weight_matrices[l] =
                 Array::from_shape_vec((self.layers[l + 1].size, self.layers[l].size), weight_array)
                     .unwrap();
 
             self.bias_matrices[l] =
                 Array2::from_shape_vec((self.layers[l + 1].size, 1), bias_array).unwrap();
+
         }
     }
     fn sigmoid(num: &f32) -> f32 {
@@ -143,10 +144,12 @@ impl ANN {
     }
 
     fn sigmoid_activation(arr: &Array2<f32>) -> Array2<f32> {
+        info!("Calculating sigmoid activation function");
         arr.map(Self::sigmoid)
     }
 
     fn sigmoid_backward(&self, layer_number: usize) -> Array2<f32> {
+        info!("Calculating sigmoid for layer {layer_number}");
         fn sigmoid_prime(val: &f32) -> f32 {
             ANN::sigmoid(val) * (1.0 - ANN::sigmoid(val))
         }
@@ -155,6 +158,7 @@ impl ANN {
     }
 
     fn relu_activation(arr: &Array2<f32>) -> Array2<f32> {
+        info!("Calculating relu activation function");
         fn relu(num: &f32) -> f32 {
             match *num > 0.0 {
                 true => *num,
@@ -165,6 +169,7 @@ impl ANN {
     }
 
     fn relu_backward(&self, layer_number: usize) -> Array2<f32> {
+        info!("Calculating relu for layer {layer_number}");
         fn relu_prime(val: &f32) -> f32 {
             match *val > 0.0 {
                 true => 1.0,
@@ -175,27 +180,32 @@ impl ANN {
     }
 
     // TODO: Finish this
-    fn linear_backward(
+    fn compute_delta(
         &self,
         next_delta: &Array2<f32>,
         layer_number: usize,
-    ) -> Result<(Array2<f32>, Array2<f32>), io::Error> {
-        info!("Generating delta and gradient for layer {}", layer_number);
-        let delta_activation = match self.layers[layer_number].activation_function {
-            ActivationFunction::Relu => self.relu_backward(layer_number - 1),
-            ActivationFunction::Sigmoid => self.sigmoid_backward(layer_number - 1),
+    ) -> Result<Array2<f32>, io::Error> {
+        info!("Generating delta for layer {}", layer_number);
+        let activation_derivative = match self.layers[layer_number].activation_function {
+            ActivationFunction::Relu => self.relu_backward(layer_number),
+            ActivationFunction::Sigmoid => self.sigmoid_backward(layer_number),
         };
-        info!("Delta activation: {:?}", delta_activation);
+        info!("Delta activation: {:?}", activation_derivative);
 
         let delta_batch =
-            self.weight_matrices[layer_number - 1].t().dot(next_delta) * delta_activation;
+            (activation_derivative * &self.weight_matrices[layer_number]).t().dot(next_delta);
 
         let delta = delta_batch.mean_axis(Axis(1)).unwrap().insert_axis(Axis(1));
 
-        let weight_grad =
-            delta.dot(&self.activation_matrices[layer_number - 1].t()) / self.example_number as f32;
+        Ok(delta)
+    }
 
-        Ok((delta, weight_grad))
+    fn compute_gradients(
+        delta: &Array2<f32>,
+        activation_matrix: &Array2<f32>,
+    ) -> Result<Array2<f32>, io::Error> {
+        info!("Computing weight gradients");
+        Ok(delta.dot(&activation_matrix.t()))
     }
 
     pub fn backpropagation(
@@ -216,14 +226,6 @@ impl ANN {
         }
         info!("Grads and deltas initialized");
 
-        let output = self.activation_matrices.last().unwrap();
-        let output_cost = match self.cost_function {
-            CostFunction::BinaryCrossEntropy => Self::binary_cross_entropy(output, expected),
-            CostFunction::MeanSquaredError => Self::mean_squared_error(output, expected),
-        }?;
-
-        info!("Cost of each output node generated:\n{:?}", output_cost);
-
         let delta_cost = match self.cost_function {
             CostFunction::MeanSquaredError => self.mean_squared_error_prime(expected),
             CostFunction::BinaryCrossEntropy => self.binary_cross_entropy_prime(expected),
@@ -232,22 +234,34 @@ impl ANN {
         .unwrap()
         .insert_axis(Axis(1));
 
-        info!("cost delta calculated: {:?}", delta_cost);
+        info!(
+            "delta cost in respect to output generated:\n{:?}",
+            delta_cost
+        );
+
+        let output_activation_derivative = match self.layers.last().unwrap().activation_function {
+            ActivationFunction::Relu => self.relu_backward(layers_len - 2),
+            ActivationFunction::Sigmoid => self.sigmoid_backward(layers_len - 2),
+        };
 
         info!(
-            "Calculating delta and weight_grad for output layer(layer number {})",
-            layers_len - 1
+            "output activation derivation: {:?}",
+            output_activation_derivative
         );
-        let (delta_out, weight_grad_out) = self.linear_backward(&delta_cost, layers_len - 1)?;
-        info!("output delta: {:?}", delta_out);
-        info!("weight grad: {:?}", weight_grad_out);
-        grads[layers_len - 2] = weight_grad_out;
-        deltas[layers_len - 2] = delta_out;
+
+        let delta_output = output_activation_derivative * delta_cost;
+
+        info!("output delta: {:?}", delta_output);
+
+        deltas.push(delta_output);
         info!("output grad and output delta added to vector!");
 
-        for i in (1..layers_len - 1).rev() {
-            info!("Generating delta and grad for layer {}", i);
-            (deltas[i - 1], grads[i - 1]) = self.linear_backward(&deltas[i], i)?;
+        for i in (0..layers_len - 1).rev() {
+            deltas[i] = self.compute_delta(&deltas[i], i)?;
+        }
+
+        for i in 0..layers_len - 1 {
+            grads[i] = Self::compute_gradients(&deltas[i + 1], &self.activation_matrices[i])?;
         }
 
         Ok((cost, deltas, grads))
@@ -257,10 +271,11 @@ impl ANN {
         info!("Training model...");
         let (cost, deltas, grads) = self.backpropagation(expected)?;
 
+
         info!("Changing weights and biases based on generated grades and deltas");
         for i in 0..self.weight_matrices.len() {
             self.weight_matrices[i] = &self.weight_matrices[i] - self.learning_rate * &grads[i];
-            self.bias_matrices[i] = &self.bias_matrices[i] - self.learning_rate * &deltas[i];
+            self.bias_matrices[i] = &self.bias_matrices[i] - self.learning_rate * &deltas[i + 1];
         }
 
         Ok(cost)
@@ -275,10 +290,11 @@ impl ANN {
             "Linear forward activation function called for layer {}",
             layer_number
         );
-        info!("Layer number: {layer_number}");
         let weight_mat = self.weight_matrices[layer_number].clone();
         let act_mat = self.activation_matrices[layer_number].clone();
         let bias_mat = self.bias_matrices[layer_number].clone();
+
+        info!("weight shape: {:?}, activation shape: {:?}, bias shape: {:?}", weight_mat.shape(), act_mat.shape(), bias_mat.shape());
 
         let logit_mat = weight_mat.dot(&act_mat) + &bias_mat;
         let next_activation_mat = match activation {
@@ -320,8 +336,7 @@ impl ANN {
         Self::is_equal_size(output, expected)?;
         let example_number = output.dim().1;
         let cost = -(1.0 / example_number as f32)
-            * (expected.dot(&output.clone().reversed_axes().log())
-                + (1.0 - expected) * (1.0 - output).log());
+            * (expected.dot(&(output + 1e-8).log()) + (1.0 - expected) * (1.0 - output).log());
 
         Ok(cost)
     }
