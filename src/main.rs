@@ -1,5 +1,5 @@
 mod ann;
-use std::{env, f32::INFINITY};
+use std::{env, f32::INFINITY, path::PathBuf, str::FromStr};
 
 use ann::{Layer, ANN};
 use ndarray::Array2;
@@ -9,19 +9,11 @@ fn main() {
 
     let mut layers: Vec<Layer> = Vec::new();
     layers.push(Layer {
-        size: 64,
+        size: 3,
         activation_function: ann::ActivationFunction::Sigmoid,
     });
     layers.push(Layer {
-        size: 100,
-        activation_function: ann::ActivationFunction::Sigmoid,
-    });
-    layers.push(Layer {
-        size: 100,
-        activation_function: ann::ActivationFunction::Sigmoid,
-    });
-    layers.push(Layer {
-        size: 100,
+        size: 4,
         activation_function: ann::ActivationFunction::Sigmoid,
     });
     layers.push(Layer {
@@ -34,16 +26,10 @@ fn main() {
     let expectation_vec = vec![1.0, 0.5, 0.0];
     let expectation: Array2<f32> = Array2::from_shape_vec((3, 1), expectation_vec).unwrap();
 
-    ann.forward_propagation();
-    let mut cost: f32 = INFINITY;
+    ann.print_layers();
+    let _ = ann.save_model(PathBuf::from_str("./test.data").unwrap());
 
-    let mut i = 0;
-    while i < 1000000000 && cost > 0.0001  {
-        i += 1;
-        cost = ann.train(&expectation).unwrap();
-        println!("{}",cost);
-        ann.forward_propagation();
-    }
-
-    println!("Finished after {} tries!", i);
+    let ann2 = ANN::from_file(PathBuf::from_str("./test.data").unwrap()).unwrap();
+    ann2.print_layers();
+    
 }

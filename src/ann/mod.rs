@@ -382,8 +382,13 @@ impl ANN {
     }
 
     pub fn print_layers(&self) -> () {
+        println!("Learning Rate {}", self.learning_rate);
+        println!("Example Number: {}", self.example_number);
+        println!("Cost Function: {:?}", self.cost_function);
         for l in 0..self.layers.len() - 1 {
             println!("Layer({}):", l);
+            println!("Layer Size: {}", self.layers[l].size);
+            println!("Layer Activation Function: {:?}", self.layers[l].activation_function);
             for n in &self.activation_matrices[l] {
                 print!("A: {}\t", *n);
             }
