@@ -2,7 +2,7 @@ mod serializer;
 
 use std::{f32::consts::E, fs, io, path::PathBuf, usize, vec};
 
-use log::info;
+use log::{error, info};
 use ndarray::{Array, Array2, Axis};
 use rand::{distributions::Uniform, prelude::Distribution};
 use serializer::Serializer;
@@ -93,6 +93,7 @@ impl ANN {
         let mut bias_matrices: Vec<Array2<f32>> = vec![];
         let mut logit_matrices: Vec<Array2<f32>> = vec![];
         activation_matrices.push(Array2::<f32>::ones((layers[0].size, example_number)));
+        logit_matrices.push(Array2::<f32>::ones((layers[0].size, example_number)));
 
         for i in 1..layers.len() {
             let act_mat = Array2::<f32>::zeros((layers[i].size, example_number));
@@ -129,14 +130,13 @@ impl ANN {
                 .collect();
 
             let bias_array: Vec<f32> = (0..self.layers[l + 1].size).map(|_| 0.0).collect();
-            
+
             self.weight_matrices[l] =
                 Array::from_shape_vec((self.layers[l + 1].size, self.layers[l].size), weight_array)
                     .unwrap();
 
             self.bias_matrices[l] =
                 Array2::from_shape_vec((self.layers[l + 1].size, 1), bias_array).unwrap();
-
         }
     }
     fn sigmoid(num: &f32) -> f32 {
@@ -190,14 +190,21 @@ impl ANN {
             ActivationFunction::Relu => self.relu_backward(layer_number),
             ActivationFunction::Sigmoid => self.sigmoid_backward(layer_number),
         };
-        info!("Delta activation: {:?}", activation_derivative);
-
+        info!("Acitvation layer derivative: {:?}", activation_derivative);
+        info!(
+            "Wight_matrix of layer {layer_number}: {:?}",
+            self.weight_matrices[layer_number]
+        );
+        info!("next delta: {:?}", next_delta);
+        /*
+        let delta_batch = (activation_derivative * &self.weight_matrices[layer_number])
+            .t()
+            .dot(next_delta);
+        */
         let delta_batch =
-            (activation_derivative * &self.weight_matrices[layer_number]).t().dot(next_delta);
-
-        let delta = delta_batch.mean_axis(Axis(1)).unwrap().insert_axis(Axis(1));
-
-        Ok(delta)
+            self.weight_matrices[layer_number].t().dot(next_delta) * activation_derivative;
+        info!("Delta batch: {:?}", delta_batch);
+        Ok(delta_batch)
     }
 
     fn compute_gradients(
@@ -229,10 +236,7 @@ impl ANN {
         let delta_cost = match self.cost_function {
             CostFunction::MeanSquaredError => self.mean_squared_error_prime(expected),
             CostFunction::BinaryCrossEntropy => self.binary_cross_entropy_prime(expected),
-        }
-        .mean_axis(Axis(1))
-        .unwrap()
-        .insert_axis(Axis(1));
+        };
 
         info!(
             "delta cost in respect to output generated:\n{:?}",
@@ -240,8 +244,8 @@ impl ANN {
         );
 
         let output_activation_derivative = match self.layers.last().unwrap().activation_function {
-            ActivationFunction::Relu => self.relu_backward(layers_len - 2),
-            ActivationFunction::Sigmoid => self.sigmoid_backward(layers_len - 2),
+            ActivationFunction::Relu => self.relu_backward(layers_len - 1),
+            ActivationFunction::Sigmoid => self.sigmoid_backward(layers_len - 1),
         };
 
         info!(
@@ -254,10 +258,10 @@ impl ANN {
         info!("output delta: {:?}", delta_output);
 
         deltas.push(delta_output);
-        info!("output grad and output delta added to vector!");
 
+        info!("output grad and output delta added to vector!");
         for i in (0..layers_len - 1).rev() {
-            deltas[i] = self.compute_delta(&deltas[i], i)?;
+            deltas[i] = self.compute_delta(&deltas[i + 1], i)?;
         }
 
         for i in 0..layers_len - 1 {
@@ -267,18 +271,62 @@ impl ANN {
         Ok((cost, deltas, grads))
     }
 
-    pub fn train(&mut self, expected: &Array2<f32>) -> Result<f32, io::Error> {
+    pub fn train(
+        &mut self,
+        inputs: Array2<f32>,
+        expected: &Array2<f32>,
+        cost_threshold: f32,
+    ) -> Result<(), io::Error> {
         info!("Training model...");
-        let (cost, deltas, grads) = self.backpropagation(expected)?;
+        if cost_threshold < 0.0 {
+            error!("Cost threshold shoud be positive");
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Cost threshold shoud be positive",
+            ));
+        }
+        let inputs_example_number = inputs.shape()[1];
+        info!("Training data number is: {inputs_example_number}");
+        let inputs_image_size = inputs.shape()[0];
 
-
-        info!("Changing weights and biases based on generated grades and deltas");
-        for i in 0..self.weight_matrices.len() {
-            self.weight_matrices[i] = &self.weight_matrices[i] - self.learning_rate * &grads[i];
-            self.bias_matrices[i] = &self.bias_matrices[i] - self.learning_rate * &deltas[i + 1];
+        if inputs_image_size != self.layers[0].size {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Training data does not match with input layer size!"),
+            ));
         }
 
-        Ok(cost)
+        if inputs_example_number != self.example_number {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Training data number does not match with example_number of model!"),
+            ));
+        }
+
+        self.activation_matrices[0] = inputs;
+        self.example_number = inputs_example_number;
+        self.initialize_parameters();
+        self.forward_propagation();
+        let mut cost = self.cost(expected)?;
+
+        println!("Current cost: {cost}");
+        while f32::abs(cost) > cost_threshold {
+            let (calculated_cost, deltas, grads) = self.backpropagation(expected)?;
+            cost = calculated_cost;
+
+            info!("Changing weights and biases based on generated grades and deltas");
+            for i in 0..self.weight_matrices.len() {
+                self.weight_matrices[i] = &self.weight_matrices[i] - self.learning_rate * &grads[i];
+                self.bias_matrices[i] =
+                    &self.bias_matrices[i] - self.learning_rate * &deltas[i + 1];
+            }
+            self.forward_propagation();
+            println!("Current cost: {cost}");
+        }
+
+        self.print_layers();
+
+        Ok(())
     }
 
     fn linear_forward_activation(
@@ -294,14 +342,19 @@ impl ANN {
         let act_mat = self.activation_matrices[layer_number].clone();
         let bias_mat = self.bias_matrices[layer_number].clone();
 
-        info!("weight shape: {:?}, activation shape: {:?}, bias shape: {:?}", weight_mat.shape(), act_mat.shape(), bias_mat.shape());
+        info!(
+            "weight shape: {:?}, activation shape: {:?}, bias shape: {:?}",
+            weight_mat.shape(),
+            act_mat.shape(),
+            bias_mat.shape()
+        );
 
-        let logit_mat = weight_mat.dot(&act_mat) + &bias_mat;
+        let next_logit_mat = weight_mat.dot(&act_mat) + &bias_mat;
         let next_activation_mat = match activation {
-            ActivationFunction::Relu => Self::relu_activation(&logit_mat),
-            ActivationFunction::Sigmoid => Self::sigmoid_activation(&logit_mat),
+            ActivationFunction::Relu => Self::relu_activation(&next_logit_mat),
+            ActivationFunction::Sigmoid => Self::sigmoid_activation(&next_logit_mat),
         };
-        self.logit_matrices[layer_number] = logit_mat;
+        self.logit_matrices[layer_number + 1] = next_logit_mat;
         self.activation_matrices[layer_number + 1] = next_activation_mat;
     }
 
@@ -388,7 +441,10 @@ impl ANN {
         for l in 0..self.layers.len() - 1 {
             println!("Layer({}):", l);
             println!("Layer Size: {}", self.layers[l].size);
-            println!("Layer Activation Function: {:?}", self.layers[l].activation_function);
+            println!(
+                "Layer Activation Function: {:?}",
+                self.layers[l].activation_function
+            );
             for n in &self.activation_matrices[l] {
                 print!("A: {}\t", *n);
             }

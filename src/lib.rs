@@ -94,7 +94,7 @@ pub fn convert_data_to_image(data_set: &Array2<u8>) -> Result<(), io::Error> {
     Ok(())
 }
 
-pub fn save_image_to_ppm(data: Vec<Array2<Color>>, path: PathBuf) -> Result<(), io::Error> {
+fn save_image_to_ppm(data: Vec<Array2<Color>>, path: PathBuf) -> Result<(), io::Error> {
     info!("Saving images!");
     let height = data[0].shape()[0];
 
