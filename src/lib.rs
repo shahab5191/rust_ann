@@ -3,8 +3,8 @@ use log::info;
 use ndarray::{s, Array1, Array2};
 use polars::prelude::*;
 use std::{
-    fs::File,
-    io::{self, Write},
+    fs::{self, File},
+    io::{self, BufRead, BufReader, Read, Write},
     path::PathBuf,
     usize,
 };
@@ -135,4 +135,63 @@ fn save_image_to_ppm(data: Vec<Array2<Color>>, path: PathBuf) -> Result<(), io::
         }
     }
     Ok(())
+}
+
+pub struct PpmImage {
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>
+}
+
+pub fn convert_image_to_array(file_path: PathBuf) -> Result<Array2<f32>, io::Error> {
+    let image: PpmImage = PpmImage::from_file(file_path)?;
+    if image.height != image.width && image.height != 64 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Image size is not correct"));
+    }
+    let image_binary_length: usize = (image.height * image.width * 3) as usize;
+    let image_data_float = image.data.into_iter().map(|x| x as f32).collect();
+    let image_data = Array2::<f32>::from_shape_vec((image_binary_length, 1), image_data_float).unwrap();
+
+    let grayscale_image = grayscale_image_data(image_data);
+    Ok(grayscale_image)
+}
+
+impl PpmImage {
+    pub fn from_file(file_path: PathBuf) -> io::Result<Self> {
+        let file = File::open(file_path)?;
+        let mut reader = BufReader::new(file);
+
+        // Read and validate the PPM header
+        let mut header = String::new();
+        reader.read_line(&mut header)?; // Read the magic number
+        if header.trim() != "P6" {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid PPM magic number"));
+        }
+
+        // Skip comments if present
+        let mut width = String::new();
+        loop {
+            width.clear();
+            reader.read_line(&mut width)?;
+            if !width.starts_with('#') { break; }
+        }
+
+        // Parse width and height
+        let dims: Vec<&str> = width.trim().split_whitespace().collect();
+        let width = dims[0].parse::<u32>().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid width"))?;
+        let height = dims[1].parse::<u32>().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid height"))?;
+
+        // Read max color value (typically 255)
+        let mut max_val = String::new();
+        reader.read_line(&mut max_val)?;
+        if max_val.trim() != "255" {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Unsupported max color value"));
+        }
+
+        // Read pixel data
+        let mut data = vec![0; (width * height * 3) as usize];
+        reader.read_exact(&mut data)?;
+
+        Ok(PpmImage { width, height, data })
+    }
 }

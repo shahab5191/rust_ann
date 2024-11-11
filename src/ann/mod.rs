@@ -268,7 +268,6 @@ impl ANN {
             grads[i] = Self::compute_gradients(&deltas[i + 1], &self.activation_matrices[i])?;
         }
 
-
         Ok((cost, deltas, grads))
     }
 
@@ -436,6 +435,60 @@ impl ANN {
         Ok(cost.sum())
     }
 
+    pub fn predict(&mut self, input: Array2<f32>) -> Result<Array2<f32>, io::Error> {
+        info!("Predict function called");
+        let image_size = input.dim().0;
+        info!("image size: {}", image_size);
+        if self.activation_matrices[0].dim().0 != image_size {
+            error!(
+                "Model input size ({}), is not the same with input size ({})",
+                self.activation_matrices[0].dim().0,
+                image_size
+            );
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "data size is not the same with model input!",
+            ));
+        }
+        let batch_size = input.dim().1;
+        info!("Image batch size: {batch_size}");
+        if self.example_number != batch_size {
+            info!(
+                "Model batch size ({}) is not the same as input batch size ({})",
+                self.example_number, batch_size
+            );
+            info!(
+                "Model input layer shape: {:?}",
+                self.activation_matrices[0].shape()
+            );
+            self.example_number = batch_size;
+            self.resize_batch(batch_size)?;
+            info!(
+                "New input matrix shape: {:?}",
+                self.activation_matrices[0].shape()
+            );
+        }
+        info!("Setting input layer to input");
+        self.activation_matrices[0] = input;
+        self.forward_propagation();
+        Ok(self.activation_matrices.last().unwrap().clone())
+    }
+
+    fn resize_batch(&mut self, batch_size: usize) -> Result<(), io::Error> {
+        let logit_len = self.logit_matrices.len();
+        for i in 0..logit_len {
+            let new_logit = Array2::<f32>::zeros((self.logit_matrices[i].dim().0, batch_size));
+            let new_activation = Array2::<f32>::zeros((self.activation_matrices[i].dim().0, batch_size));
+            self.logit_matrices[i] = new_logit;
+            self.activation_matrices[i] = new_activation;
+        }
+        for i in 0..self.bias_matrices.len(){
+            let new_bias = Array2::<f32>::zeros((self.bias_matrices[i].dim().0, batch_size));
+            self.bias_matrices[i] = new_bias;
+        }
+        Ok(())
+    }
+
     pub fn print_layers(&self) -> () {
         println!("Learning Rate {}", self.learning_rate);
         println!("Example Number: {}", self.example_number);
@@ -479,7 +532,6 @@ impl ANN {
 
     pub fn from_file(file_path: PathBuf) -> Result<Self, io::Error> {
         let buffer = fs::read(file_path)?;
-
         let serializer = Serializer {};
         let ann = serializer.deserialize(&buffer)?;
         Ok(ann)

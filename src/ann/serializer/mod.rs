@@ -44,8 +44,6 @@ impl Serializer {
         buffer.extend((act_vec.len() as u32).to_le_bytes());
         buffer.extend(act_vec);
 
-        println!("buffer: {:?}", buffer);
-
         buffer
     }
 
@@ -203,9 +201,7 @@ impl Serializer {
 
     fn deserialize_vec(cursor: &mut Cursor<&Vec<u8>>) -> Result<Vec<Array2<f32>>, io::Error> {
         let vec_item_len: usize = Self::read_bytes_as_usize(cursor)?;
-        println!("vec_item_len {}", vec_item_len);
         let vec_len: usize = Self::read_bytes_as_usize(cursor)?;
-        println!("vec_len {}", vec_len);
 
         Self::check_remaining_bytes(cursor, vec_len)?;
 
