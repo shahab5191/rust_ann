@@ -139,19 +139,19 @@ impl ANN {
                 Array2::from_shape_vec((self.layers[l + 1].size, 1), bias_array).unwrap();
         }
     }
-    fn sigmoid(num: &f32) -> f32 {
+    fn sigmoid(num: f32) -> f32 {
         1.0 / (1.0 + E.powf(-num))
     }
 
     fn sigmoid_activation(arr: &Array2<f32>) -> Array2<f32> {
         info!("Calculating sigmoid activation function");
-        arr.map(Self::sigmoid)
+        arr.mapv(Self::sigmoid)
     }
 
     fn sigmoid_backward(&self, layer_number: usize) -> Array2<f32> {
         info!("Calculating sigmoid for layer {layer_number}");
         fn sigmoid_prime(val: &f32) -> f32 {
-            ANN::sigmoid(val) * (1.0 - ANN::sigmoid(val))
+            ANN::sigmoid(*val) * (1.0 - ANN::sigmoid(*val))
         }
 
         self.logit_matrices[layer_number].map(|x| sigmoid_prime(x))
@@ -288,18 +288,18 @@ impl ANN {
         let inputs_example_number = inputs.shape()[1];
         info!("Training data number is: {inputs_example_number}");
         let inputs_image_size = inputs.shape()[0];
-
+        info!("Traning Input size: {inputs_image_size}");
         if inputs_image_size != self.layers[0].size {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Training data does not match with input layer size!"),
+                format!("Training data does not match with input layer size!, Inputs Size: {}, Model input size: {}", inputs_image_size, self.layers[0].size),
             ));
         }
 
         if inputs_example_number != self.example_number {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Training data number does not match with example_number of model!"),
+                format!("Training data number does not match with example_number of model! Model example number: {}, Input example number: {}", self.example_number, inputs_example_number),
             ));
         }
 
@@ -309,11 +309,16 @@ impl ANN {
         self.forward_propagation();
         let mut cost = self.cost(expected)?;
 
-        println!("Current cost: {cost}");
+        println!("Cost: {cost}");
+
         while f32::abs(cost) > cost_threshold {
+            println!("ITERATION START");
+            println!(
+                "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+            );
             let (calculated_cost, deltas, grads) = self.backpropagation(expected)?;
             cost = calculated_cost;
-
+            println!("Cost: {cost}");
             info!("Changing weights and biases based on generated grades and deltas");
             for i in 0..self.weight_matrices.len() {
                 self.weight_matrices[i] = &self.weight_matrices[i] - self.learning_rate * &grads[i];
@@ -321,10 +326,11 @@ impl ANN {
                     &self.bias_matrices[i] - self.learning_rate * &deltas[i + 1];
             }
             self.forward_propagation();
-            println!("Current cost: {cost}");
+            println!("ITERATION END");
+            println!(
+                "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+            );
         }
-
-        self.print_layers();
 
         Ok(())
     }
@@ -354,6 +360,10 @@ impl ANN {
             ActivationFunction::Relu => Self::relu_activation(&next_logit_mat),
             ActivationFunction::Sigmoid => Self::sigmoid_activation(&next_logit_mat),
         };
+
+        println!("Next Logit Matrix ({}): {:?}", layer_number + 1, next_logit_mat);
+        println!("Next Activation Matrix ({}) : {:?}", layer_number + 1, next_activation_mat);
+
         self.logit_matrices[layer_number + 1] = next_logit_mat;
         self.activation_matrices[layer_number + 1] = next_activation_mat;
     }
@@ -388,9 +398,10 @@ impl ANN {
         info!("Binary cross entropy called");
         Self::is_equal_size(output, expected)?;
         let example_number = output.dim().1;
-        let cost = -(1.0 / example_number as f32)
-            * (expected.dot(&(output + 1e-8).log()) + (1.0 - expected) * (1.0 - output).log());
 
+        let cost = -(1.0 / example_number as f32)
+            * (expected * &(output + 1e-8).log() + (1.0 - expected) * (1.0 - output + 1e-8).log());
+        info!("Calculated cost is: {}", cost);
         Ok(cost)
     }
 
@@ -429,9 +440,9 @@ impl ANN {
         let cost = match self.cost_function {
             CostFunction::MeanSquaredError => Self::mean_squared_error(output, expected),
             CostFunction::BinaryCrossEntropy => Self::binary_cross_entropy(&output, expected),
-        };
+        }?;
 
-        Ok(cost?.sum())
+        Ok(cost.sum())
     }
 
     pub fn print_layers(&self) -> () {

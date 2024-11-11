@@ -1,23 +1,27 @@
 mod ann;
-use std::env;
+use std::{env, path::PathBuf, str::FromStr};
 
 use ann::{Layer, ANN};
 use ndarray::Array2;
+use rust_ann::{array_from_dataframe, dataframe_from_csv, grayscale_image_data};
 
 fn main() {
     env::set_var("RUST_LOG", "debug");
-    //env_logger::init();
+    env_logger::init();
     let mut layers = Vec::<Layer>::new();
-    layers.push(Layer{size:2, activation_function:ann::ActivationFunction::Sigmoid});
-    layers.push(Layer{size:3, activation_function:ann::ActivationFunction::Sigmoid});
-    layers.push(Layer{size:2, activation_function:ann::ActivationFunction::Sigmoid});
-    let mut ann = ANN::new(layers, 0.01, 2, ann::CostFunction::MeanSquaredError);
-    let inputs_vec: Vec<f32> = vec![0.2, 0.1, 0.3, 0.4];
-    //let inputs_vec: Vec<f32> = vec![0.2, 0.1];
-    let inputs: Array2<f32> = Array2::from_shape_vec((2,2), inputs_vec).unwrap();
-    let expected_vec: Vec<f32> = vec![1.0, 0.0, 0.0, 1.0];
-    //let expected_vec: Vec<f32> = vec![1.0, 0.0];
-    let expected: Array2<f32> = Array2::from_shape_vec((2,2), expected_vec).unwrap();
+    layers.push(Layer{size:4096, activation_function:ann::ActivationFunction::Sigmoid});
+    layers.push(Layer{size:100, activation_function:ann::ActivationFunction::Relu});
+    layers.push(Layer{size:100, activation_function:ann::ActivationFunction::Sigmoid});
+    layers.push(Layer{size:1, activation_function:ann::ActivationFunction::Sigmoid});
+    let mut ann = ANN::new(layers, 1.0, 209, ann::CostFunction::BinaryCrossEntropy);
+    let (data_set, labels) = dataframe_from_csv(
+        PathBuf::from_str("./training_data/training_set.csv"
+    ).unwrap()).unwrap();
+    let raw_inputs: Array2<f32> = array_from_dataframe(&data_set);
+    let inputs: Array2<f32> = grayscale_image_data(raw_inputs);
+    let expected: Array2<f32> = array_from_dataframe(&labels);
+    println!("Input size: {:?}", inputs.shape());
+    println!("Expected Size: {:?}", expected.shape());
     let result = ann.train(inputs, &expected, 0.0001);
     match result {
         Ok(_) => println!("Model ran successfully!"),

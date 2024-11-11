@@ -1,11 +1,12 @@
-use log::info;
-use ndarray::Array2;
-use polars::prelude::*;
 use core::f32;
+use log::info;
+use ndarray::{s, Array1, Array2};
+use polars::prelude::*;
 use std::{
     fs::File,
     io::{self, Write},
-    path::PathBuf, usize,
+    path::PathBuf,
+    usize,
 };
 mod ann;
 
@@ -27,20 +28,34 @@ pub fn dataframe_from_csv(file_path: PathBuf) -> PolarsResult<(DataFrame, DataFr
     Ok((training_dataset, training_labels))
 }
 
-pub fn array_from_dataframe(df: &DataFrame) -> Array2<u8> {
+pub fn array_from_dataframe(df: &DataFrame) -> Array2<f32> {
     let arr = df
-        .to_ndarray::<Int64Type>(IndexOrder::C)
+        .to_ndarray::<Float32Type>(IndexOrder::C)
         .unwrap()
         .reversed_axes();
-    arr.mapv(|x| {
-        if x < 0 {
-            0
-        } else if x > 255 {
-            255
-        } else {
-            x as u8
+    arr
+}
+
+pub fn grayscale_image_data(images: Array2<f32>) -> Array2<f32> {
+    let expected_row_size = images.dim().0 / 3;
+    let col_size = images.dim().1;
+    println!("Expected row size: {expected_row_size}, col size: {col_size}");
+    let mut new_images: Array2<f32> = Array2::<f32>::zeros((expected_row_size, col_size));
+    println!("new images size: {:?}", new_images.shape());
+
+    for (i, col) in images.columns().into_iter().enumerate() {
+        let image_vec = col.to_vec();
+        let mut grayscale_vec: Vec<f32> = Vec::new();
+        for i in 0..image_vec.len() / 3 {
+            let pixel = (image_vec[i * 3] + image_vec[i * 3 + 1] + image_vec[i * 3 + 2]) / 3.0;
+            grayscale_vec.push(pixel);
         }
-    })
+        new_images
+            .slice_mut(s![.., i])
+            .assign(&Array1::from(grayscale_vec));
+    }
+
+    new_images
 }
 
 pub fn convert_data_to_image(data_set: &Array2<u8>) -> Result<(), io::Error> {
@@ -53,20 +68,27 @@ pub fn convert_data_to_image(data_set: &Array2<u8>) -> Result<(), io::Error> {
     if image_binary_len % 3 != 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Data set shape is not 3 channel color!\nBinary length: {}", image_binary_len),
+            format!(
+                "Data set shape is not 3 channel color!\nBinary length: {}",
+                image_binary_len
+            ),
         ));
     }
 
     let image_dim_sqrt = f32::sqrt(image_binary_len as f32 / 3.0);
     if image_dim_sqrt != f32::floor(image_dim_sqrt) {
-        println!("image dim sqrt: {}, floor: {}", image_dim_sqrt, f32::floor(image_dim_sqrt));
+        println!(
+            "image dim sqrt: {}, floor: {}",
+            image_dim_sqrt,
+            f32::floor(image_dim_sqrt)
+        );
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Images must be square!",
         ));
     }
 
-    let image_dim = f32::sqrt(image_binary_len as f32/ 3.0) as usize;
+    let image_dim = f32::sqrt(image_binary_len as f32 / 3.0) as usize;
 
     let mut images: Vec<Array2<Color>> = Vec::new();
 
