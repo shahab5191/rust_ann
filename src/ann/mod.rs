@@ -268,6 +268,7 @@ impl ANN {
             grads[i] = Self::compute_gradients(&deltas[i + 1], &self.activation_matrices[i])?;
         }
 
+
         Ok((cost, deltas, grads))
     }
 
@@ -312,10 +313,6 @@ impl ANN {
         println!("Cost: {cost}");
 
         while f32::abs(cost) > cost_threshold {
-            println!("ITERATION START");
-            println!(
-                "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-            );
             let (calculated_cost, deltas, grads) = self.backpropagation(expected)?;
             cost = calculated_cost;
             println!("Cost: {cost}");
@@ -326,10 +323,6 @@ impl ANN {
                     &self.bias_matrices[i] - self.learning_rate * &deltas[i + 1];
             }
             self.forward_propagation();
-            println!("ITERATION END");
-            println!(
-                "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
-            );
         }
 
         Ok(())
@@ -361,9 +354,6 @@ impl ANN {
             ActivationFunction::Sigmoid => Self::sigmoid_activation(&next_logit_mat),
         };
 
-        println!("Next Logit Matrix ({}): {:?}", layer_number + 1, next_logit_mat);
-        println!("Next Activation Matrix ({}) : {:?}", layer_number + 1, next_activation_mat);
-
         self.logit_matrices[layer_number + 1] = next_logit_mat;
         self.activation_matrices[layer_number + 1] = next_activation_mat;
     }
@@ -372,7 +362,7 @@ impl ANN {
         info!("Forward propagation called");
         info!("Length of layers is {}", self.layers.len());
         for l in 0..self.layers.len() - 1 {
-            self.linear_forward_activation(l, self.layers[l].activation_function.clone());
+            self.linear_forward_activation(l, self.layers[l + 1].activation_function.clone());
         }
     }
 
@@ -407,7 +397,8 @@ impl ANN {
 
     fn binary_cross_entropy_prime(&self, expected: &Array2<f32>) -> Array2<f32> {
         let output = self.activation_matrices.last().unwrap();
-        (output - expected) / (output * (1.0 - output))
+        let clamped_output = output.mapv(|x| x.max(1e-7));
+        (output - expected) / (&clamped_output * (1.0 - &clamped_output))
     }
 
     fn mean_squared_error(

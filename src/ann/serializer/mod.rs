@@ -83,6 +83,40 @@ impl Serializer {
         Ok(buffer)
     }
 
+    pub fn serialize_weights(&self, ann: &ANN) -> Result<Vec<u8>, std::io::Error> {
+        let mut buffer: Vec<u8> = Vec::new();
+
+        // Adding Header
+        let header = "SHIRIN_ANN".as_bytes();
+        buffer.extend(header);
+
+        // Serializing layers
+        buffer.extend(self.serialize_layers(&ann.layers));
+
+        // Serializing learning_rate
+        buffer.extend(ann.learning_rate.to_le_bytes());
+
+        // Serializing example_number
+        buffer.extend((ann.example_number as u32).to_le_bytes());
+
+        // Serializing cost_function
+        buffer.extend((ann.cost_function.clone() as u8).to_le_bytes());
+
+        // Serializig logit_matrices
+        buffer.extend(self.serialize_vec(&ann.logit_matrices));
+
+        // Serializing activation_matrices
+        buffer.extend(self.serialize_vec(&ann.activation_matrices));
+
+        // Serializing weight matrices
+        buffer.extend(self.serialize_vec(&ann.weight_matrices));
+
+        // Serializing bias matrices
+        buffer.extend(self.serialize_vec(&ann.bias_matrices));
+
+        Ok(buffer)
+    }
+
     fn deserialize_header(cursor: &mut Cursor<&Vec<u8>>) -> Result<(), io::Error> {
         let mut header_magic = vec![0; 10];
         cursor.read_exact(&mut header_magic)?;

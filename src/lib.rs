@@ -55,7 +55,7 @@ pub fn grayscale_image_data(images: Array2<f32>) -> Array2<f32> {
             .assign(&Array1::from(grayscale_vec));
     }
 
-    new_images
+    new_images / 255.0
 }
 
 pub fn convert_data_to_image(data_set: &Array2<u8>) -> Result<(), io::Error> {
