@@ -3,10 +3,7 @@ use log::info;
 use ndarray::{s, Array1, Array2};
 use polars::prelude::*;
 use std::{
-    fs::{self, File},
-    io::{self, BufRead, BufReader, Read, Write},
-    path::PathBuf,
-    usize,
+    fs::{self, File}, io::{self, BufRead, BufReader, Read, Write}, path::PathBuf, str::FromStr, usize
 };
 mod ann;
 
@@ -58,7 +55,7 @@ pub fn grayscale_image_data(images: Array2<f32>) -> Array2<f32> {
     new_images / 255.0
 }
 
-pub fn convert_data_to_image(data_set: &Array2<u8>) -> Result<(), io::Error> {
+pub fn convert_data_to_image(data_set: &Array2<f32>) -> Result<(), io::Error> {
     let image_count = data_set.shape()[1];
     let image_binary_len = data_set.shape()[0];
 
@@ -95,13 +92,13 @@ pub fn convert_data_to_image(data_set: &Array2<u8>) -> Result<(), io::Error> {
     info!("Converting raw data into Array2 of color");
 
     for col in data_set.columns() {
-        let image_binary_vector: Vec<u8> = col.to_vec();
+        let image_binary_vector: Vec<f32> = col.to_vec();
         let mut image_vec: Vec<Color> = Vec::new();
         for i in 0..(image_binary_vector.len() / 3) {
             let color: Color = Color {
-                r: image_binary_vector[i * 3],
-                g: image_binary_vector[i * 3 + 1],
-                b: image_binary_vector[i * 3 + 2],
+                r: image_binary_vector[i * 3] as u8,
+                g: image_binary_vector[i * 3 + 1] as u8,
+                b: image_binary_vector[i * 3 + 2] as u8,
             };
 
             image_vec.push(color);
@@ -151,7 +148,6 @@ pub fn convert_image_to_array(file_path: PathBuf) -> Result<Array2<f32>, io::Err
     let image_binary_length: usize = (image.height * image.width * 3) as usize;
     let image_data_float = image.data.into_iter().map(|x| x as f32).collect();
     let image_data = Array2::<f32>::from_shape_vec((image_binary_length, 1), image_data_float).unwrap();
-
     let grayscale_image = grayscale_image_data(image_data);
     Ok(grayscale_image)
 }

@@ -1,6 +1,9 @@
 /target
 /test.bin
-
+*.ppm
+*.jpg
+*.webp
+*.png
 # Added by cargo
 #
 # already existing elements were commented out
