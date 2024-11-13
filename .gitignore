@@ -1,5 +1,6 @@
-/target
-/test.bin
+target
+training_data
+/model.bin
 *.ppm
 *.jpg
 *.webp
