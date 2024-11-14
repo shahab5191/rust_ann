@@ -25,15 +25,38 @@ pub fn dataframe_from_csv(file_path: PathBuf) -> PolarsResult<(DataFrame, DataFr
 
     let training_labels = data.select_at_idx(0).unwrap().clone().into_frame();
     let col_names = data.get_column_names();
-    let remaining_columns: Vec<&str> = col_names[1..]
-        .iter()
-        .map(|x| x.as_ref())
-        .collect();
+    let remaining_columns: Vec<&str> = col_names[1..].iter().map(|x| x.as_ref()).collect();
     let training_dataset = data.select(remaining_columns).unwrap();
     Ok((training_dataset, training_labels))
 }
 
-pub fn array_from_dataframe(df: &DataFrame) -> Array2<f32> {
+pub fn expand_labels(col: DataFrame) -> Result<Array2<f32>, io::Error> {
+    let col_size = col.shape().0;
+    let label_array = array_from_dataframe(col);
+    let mut max: f32 = 0.0;
+    for i in &label_array {
+        if *i > max {
+            max = *i;
+        }
+    }
+    max += 1.0;
+    let mut expanded_vec: Vec<f32> = vec![0.0; col_size * max as usize];
+    for (i, label) in label_array.iter().enumerate() {
+        expanded_vec[i * max as usize + *label as usize] = 1.0;
+    }
+    let expanded_array: Array2<f32> =
+        Array2::<f32>::from_shape_vec((max as usize, col_size), expanded_vec).map_err(
+            |_| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    "Error converting expanded vec to array2",
+                )
+            },
+        )?;
+    Ok(expanded_array)
+}
+
+pub fn array_from_dataframe(df: DataFrame) -> Array2<f32> {
     let arr = df
         .to_ndarray::<Float32Type>(IndexOrder::C)
         .unwrap()

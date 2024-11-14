@@ -3,7 +3,7 @@ mod serializer;
 use std::{f32::consts::E, fs, io, path::PathBuf, usize, vec};
 
 use log::{error, info};
-use ndarray::{Array, Array2, Axis};
+use ndarray::{Array, Array2};
 use rand::{distributions::Uniform, prelude::Distribution};
 use serializer::Serializer;
 
@@ -478,11 +478,12 @@ impl ANN {
         let logit_len = self.logit_matrices.len();
         for i in 0..logit_len {
             let new_logit = Array2::<f32>::zeros((self.logit_matrices[i].dim().0, batch_size));
-            let new_activation = Array2::<f32>::zeros((self.activation_matrices[i].dim().0, batch_size));
+            let new_activation =
+                Array2::<f32>::zeros((self.activation_matrices[i].dim().0, batch_size));
             self.logit_matrices[i] = new_logit;
             self.activation_matrices[i] = new_activation;
         }
-        for i in 0..self.bias_matrices.len(){
+        for i in 0..self.bias_matrices.len() {
             let new_bias = Array2::<f32>::zeros((self.bias_matrices[i].dim().0, batch_size));
             self.bias_matrices[i] = new_bias;
         }
