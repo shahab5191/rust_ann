@@ -7,6 +7,7 @@ edition = "2021"
 colored = "2.1.0"
 env_logger = "0.11.5"
 log = "0.4.22"
-ndarray = { version = "0.15", features = ["serde"] }
+ndarray = { version = "0.15", features = ["serde", "rayon"] }
 polars = { version = "0.44.2", features = ["lazy", "ndarray"] }
 rand = "0.8.5"
+rayon = "1.10.0"

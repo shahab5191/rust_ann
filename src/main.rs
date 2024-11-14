@@ -9,14 +9,14 @@ use rust_ann::{
 
 fn main() {
     env::set_var("RUST_LOG", "debug");
-    //env_logger::init();
+    env_logger::init();
 
     let mut layers = Vec::<Layer>::new();
     layers.push(Layer{size:784, activation_function:ann::ActivationFunction::Sigmoid});
     layers.push(Layer{size:100, activation_function:ann::ActivationFunction::Sigmoid});
     layers.push(Layer{size:100, activation_function:ann::ActivationFunction::Sigmoid});
     layers.push(Layer{size:26, activation_function:ann::ActivationFunction::Sigmoid});
-    let mut ann = ANN::new(layers, 0.001, 372450, ann::CostFunction::BinaryCrossEntropy);
+    let mut ann = ANN::new(layers, 0.001, 372450, ann::CostFunction::MeanSquaredError);
     let (data_set, labels) = dataframe_from_csv(
         PathBuf::from_str("./training_data/handwritten_data.csv"
     ).unwrap()).unwrap();

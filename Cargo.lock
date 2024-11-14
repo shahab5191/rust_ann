@@ -1455,6 +1455,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rawpointer",
+ "rayon",
  "serde",
 ]
 
@@ -2577,6 +2578,7 @@ dependencies = [
  "ndarray",
  "polars",
  "rand",
+ "rayon",
 ]
 
 [[package]]

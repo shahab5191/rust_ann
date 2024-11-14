@@ -1,10 +1,12 @@
 mod serializer;
+use colored::Colorize;
 
 use std::{f32::consts::E, fs, io, path::PathBuf, usize, vec};
 
 use log::{error, info};
-use ndarray::{Array, Array2};
+use ndarray::{Array, Array2, Axis};
 use rand::{distributions::Uniform, prelude::Distribution};
+use rayon::prelude::*;
 use serializer::Serializer;
 
 #[derive(Debug, Clone)]
@@ -29,13 +31,19 @@ trait Pow {
 
 impl Log for Array2<f32> {
     fn log(&self) -> Array2<f32> {
-        self.map(|x| x.log(std::f32::consts::E))
+        let mut temp_arr = self.clone();
+        temp_arr.par_map_inplace(|x| *x = x.log(std::f32::consts::E));
+        temp_arr
     }
 }
 
 impl Pow for Array2<f32> {
     fn pow(&self, val: i32) -> Array2<f32> {
-        self.map(|x| x.powi(val))
+        let mut temp_arr = self.clone();
+        temp_arr.par_map_inplace(|x| {
+            *x = x.powi(val);
+        });
+        temp_arr
     }
 }
 
@@ -309,12 +317,12 @@ impl ANN {
         self.forward_propagation();
         let mut cost = self.cost(expected)?;
 
-        println!("Cost: {cost}");
+        println!("{} {}", "Cost: ".red(), cost);
 
         while f32::abs(cost) > cost_threshold {
             let (calculated_cost, deltas, grads) = self.backpropagation(expected)?;
             cost = calculated_cost;
-            println!("Cost: {cost}");
+            println!("{} {}", "Cost: ".red(), cost);
             info!("Changing weights and biases based on generated grades and deltas");
             for i in 0..self.weight_matrices.len() {
                 self.weight_matrices[i] = &self.weight_matrices[i] - self.learning_rate * &grads[i];
@@ -347,7 +355,18 @@ impl ANN {
             bias_mat.shape()
         );
 
-        let next_logit_mat = weight_mat.dot(&act_mat) + &bias_mat;
+        info!("Performing dot product on weight and activation funnction");
+        let mut next_logit_mat = weight_mat.dot(&act_mat);
+        info!("Dot product result: {:?}", next_logit_mat);
+        info!("Bias matrix: {:?}", bias_mat);
+        info!("Performing parallel elementwise sum with bias");
+        next_logit_mat
+            .indexed_iter_mut()
+            .par_bridge()
+            .for_each(|(index, x)| {
+                *x += bias_mat[(index.0, 0)]
+            });
+        info!("Element wise sum result: {:?}", next_logit_mat);
         let next_activation_mat = match activation {
             ActivationFunction::Relu => Self::relu_activation(&next_logit_mat),
             ActivationFunction::Sigmoid => Self::sigmoid_activation(&next_logit_mat),
